@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **HA addon: "Release Bluetooth" toggle now survives an addon or Home Assistant restart.** Previously the released state was forgotten on restart, the bridge silently re-grabbed the BT device, and only released it again after the configured idle timeout — which interrupted whatever else was using the speaker (for example a TV soundbar over HDMI/ARC). The released flag now carries forward in the addon's options-to-config rebuild so reclaiming requires an explicit user action. ([#276](https://github.com/trudenboy/sendspin-bt-bridge/issues/276))
+
 ## [2.68.0] - 2026-05-02
 
 ### Added

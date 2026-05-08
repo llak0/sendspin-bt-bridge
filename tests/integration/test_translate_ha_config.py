@@ -221,6 +221,57 @@ def test_static_delay_ms_in_options_overrides_existing(tmp_path):
     assert devs["AA:BB:CC:DD:EE:FF"]["static_delay_ms"] == 300
 
 
+def test_released_flag_preserved_across_addon_restart(tmp_path):
+    """The per-device `released` flag must survive an addon restart (issue #276).
+
+    HA Supervisor strips fields not declared in the addon options schema, so
+    `released` written via the bridge's "Release Bluetooth" button disappears
+    from options.json on the next save. The translator must carry it over from
+    the previous config.json — otherwise the bridge silently re-grabs the BT
+    device on every HA restart, defeating the user's intent.
+    """
+    existing = {
+        "BLUETOOTH_DEVICES": [
+            {"mac": "AA:BB:CC:DD:EE:FF", "released": True},
+        ],
+    }
+    _write_json(tmp_path / "config.json", existing)
+    _write_json(tmp_path / "options.json", _minimal_options())
+
+    with patch("scripts.translate_ha_config._detect_adapters", return_value=[]):
+        main()
+
+    cfg = _read_json(tmp_path / "config.json")
+    devs = {d["mac"]: d for d in cfg["BLUETOOTH_DEVICES"]}
+    assert devs["AA:BB:CC:DD:EE:FF"]["released"] is True
+
+
+def test_released_false_in_options_overrides_existing(tmp_path):
+    """A reclaim (released=False) written via the addon UI must win over a stale
+    released=True in the existing config — preservation is only a fallback."""
+    existing = {
+        "BLUETOOTH_DEVICES": [
+            {"mac": "AA:BB:CC:DD:EE:FF", "released": True},
+        ],
+    }
+    _write_json(tmp_path / "config.json", existing)
+    _write_json(
+        tmp_path / "options.json",
+        _minimal_options(
+            bluetooth_devices=[
+                {"mac": "AA:BB:CC:DD:EE:FF", "name": "Speaker", "released": False},
+            ],
+        ),
+    )
+
+    with patch("scripts.translate_ha_config._detect_adapters", return_value=[]):
+        main()
+
+    cfg = _read_json(tmp_path / "config.json")
+    devs = {d["mac"]: d for d in cfg["BLUETOOTH_DEVICES"]}
+    assert devs["AA:BB:CC:DD:EE:FF"]["released"] is False
+
+
 def test_runtime_state_preserved(tmp_path):
     """LAST_VOLUMES, AUTH_PASSWORD_HASH, SECRET_KEY should survive translation."""
     existing = {
