@@ -323,6 +323,13 @@ def main() -> None:
                     # config.json and would otherwise be reset on every
                     # addon restart that triggers a config rebuild.
                     "static_delay_ms",
+                    # Preserve "Release Bluetooth" toggle across addon restarts
+                    # (issue #276). The flag is set via the bridge's web UI
+                    # and isn't part of the addon options schema, so the
+                    # Supervisor strips it from options.json on the next
+                    # save — without preservation the bridge would silently
+                    # re-grab the released BT device on every HA restart.
+                    "released",
                 ):
                     if field not in dev and field in existing_devs[mac]:
                         dev[field] = existing_devs[mac][field]
