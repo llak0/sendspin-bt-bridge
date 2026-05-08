@@ -234,6 +234,22 @@ Then restart the BlueZ daemon (`systemctl restart bluetooth` on a regular host).
 
 **Proper fix.** Update the host OS to a release that ships `bluez ≥ 5.87` or a patched `5.86-4.1`. On HAOS this happens automatically as part of a Supervisor/host update. Once the patched version is running, no bridge-side intervention is needed.
 
+## Scan sees BLE devices but no audio speakers (HA Bluetooth integration conflict)
+
+**Symptom.** On a single-adapter setup — typically a Raspberry Pi 4 / 5 running the addon against the built-in Bluetooth controller — **Scan nearby** picks up BLE devices like irrigation controllers, sensors, and beacons, but **classic A2DP speakers never appear**. The same speaker pairs fine from a phone or another OS on the same hardware.
+
+**Root cause.** Home Assistant's built-in **Bluetooth integration** keeps the adapter busy with BLE passive scanning. When the same `hci0` is shared with the bridge addon, BLE advertisements still bubble up through the kernel — that is why BLE devices show up in the addon's scan results — but the BR/EDR inquiry the bridge needs to discover classic speakers cannot complete on a controller that is already pinned in LE-scan mode.
+
+**Fix.** Release the adapter from Home Assistant before pairing speakers from the bridge:
+
+1. **Settings → Devices & services → Bluetooth → ⋮ → Disable** (or **Delete** if you do not need it at all).
+2. From the bridge UI, run **Configuration → Bluetooth → Scan nearby** again.
+3. Pair the speaker as usual.
+
+If you still need HA's Bluetooth integration for unrelated devices (ESPHome BLE proxies, room-presence sensors, energy meters), the cleanest layout is **two adapters**: leave the built-in controller to HA, and add a USB BT dongle dedicated to the bridge. See [Bluetooth adapters](/sendspin-bt-bridge/bluetooth-adapters/) for hardware notes.
+
+This conflict is most visible on Raspberry Pi setups because the built-in BCM controller is the only adapter — separating responsibilities by adapter avoids it entirely.
+
 ## Scan finds nothing
 
 If **Scan nearby** returns no useful results:
