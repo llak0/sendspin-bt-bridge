@@ -447,3 +447,53 @@ def test_apply_global_broadcast_log_level_updates_root_logger(monkeypatch):
     assert "DEBUG" in captured
     # Restore root logger to a sane level so subsequent tests aren't affected.
     logging.getLogger().setLevel(logging.WARNING)
+
+
+def test_apply_hot_routes_non_timeout_exception_to_errors_not_pending(monkeypatch):
+    """Only ``concurrent.futures.TimeoutError`` should bucket as ``hot_pending``.
+    Any other exception leaking from ``future.result()`` (validation bug,
+    internal state error, late ``RuntimeError`` from a shutting-down loop)
+    is a genuine failure and must surface in ``summary.errors`` so the UI
+    shows a red banner instead of a misleading "Pending live"."""
+
+    client = MagicMock()
+
+    async def _coro(*args, **kwargs):
+        return []
+
+    client.apply_hot_config = _coro
+
+    snapshot = _FakeSnapshot({"AA:BB:CC:DD:EE:FF": client})
+    loop = _fake_loop()
+    try:
+        orch = ReconfigOrchestrator(loop, snapshot)  # type: ignore[arg-type]
+
+        def _raising_with_value_error(coro, _loop):
+            coro.close()
+            return _ThrowingFuture(ValueError("simulated apply_hot_config bug"))
+
+        monkeypatch.setattr(
+            "sendspin_bridge.services.lifecycle.reconfig_orchestrator.asyncio.run_coroutine_threadsafe",
+            _raising_with_value_error,
+        )
+
+        action = ReconfigAction(
+            kind=ActionKind.HOT_APPLY,
+            mac="AA:BB:CC:DD:EE:FF",
+            fields=["static_delay_ms"],
+            payload={"static_delay_ms": 250.0},
+            label="Test Speaker",
+        )
+
+        summary = orch.apply([action])
+
+        assert summary.hot_applied == []
+        assert summary.hot_pending == []
+        assert len(summary.errors) == 1
+        assert summary.errors[0]["mac"] == "AA:BB:CC:DD:EE:FF"
+        # ValueError from apply_hot_config must be surfaced; the message
+        # should mention the underlying exception type so operators can
+        # distinguish bugs from slow IPC.
+        assert "ValueError" in summary.errors[0]["error"]
+    finally:
+        loop.close()

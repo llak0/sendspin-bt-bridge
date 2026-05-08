@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -230,7 +231,7 @@ class ReconfigOrchestrator:
             return
         try:
             applied_keys = future.result(timeout=_HOT_APPLY_TIMEOUT_S)
-        except Exception as exc:
+        except FutureTimeoutError as exc:
             # IPC didn't flush within the HTTP-response window.  Bucket as
             # "pending live" rather than an error so the UI shows a neutral
             # "still applying" hint instead of a red failure: the coroutine
@@ -251,6 +252,26 @@ class ReconfigOrchestrator:
 
             future.add_done_callback(_log_late_failure)
             summary.hot_pending.append(action.to_summary())
+            return
+        except Exception as exc:
+            # ``apply_hot_config`` itself raised — validation bug, internal
+            # state error, etc.  Surface as an explicit error so the UI shows
+            # a red failure instead of misleading "Pending live": this is a
+            # genuine problem, not a slow IPC.
+            logger.warning(
+                "Hot-apply for %s failed: %s",
+                action.label or action.mac,
+                exc,
+            )
+            summary.errors.append(
+                {
+                    "kind": action.kind.value,
+                    "mac": action.mac,
+                    "label": action.label,
+                    "fields": list(action.fields),
+                    "error": f"hot-apply failed ({type(exc).__name__}: {exc})",
+                }
+            )
             return
 
         applied_set = set(applied_keys or [])
